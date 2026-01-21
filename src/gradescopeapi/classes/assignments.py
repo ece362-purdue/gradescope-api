@@ -2,6 +2,7 @@
 
 import datetime
 from dataclasses import dataclass
+import json
 
 import requests
 from bs4 import BeautifulSoup
@@ -37,6 +38,7 @@ def update_assignment_date(
     release_date: datetime.datetime | None = None,
     due_date: datetime.datetime | None = None,
     late_due_date: datetime.datetime | None = None,
+    section_dates: dict[str, dict[str, datetime.datetime | None]] | None = None,
     gradescope_base_url: str = DEFAULT_GRADESCOPE_BASE_URL,
 ) -> bool:
     """Update the dates of an assignment on Gradescope.
@@ -48,6 +50,7 @@ def update_assignment_date(
         release_date (datetime.datetime | None, optional): The release date of the assignment. Defaults to None.
         due_date (datetime.datetime | None, optional): The due date of the assignment. Defaults to None.
         late_due_date (datetime.datetime | None, optional): The late due date of the assignment. Defaults to None.
+        section_dates (dict[str, dict[str, datetime.datetime | None]] | None, optional): The section-specific dates for the assignment. Defaults to None.
 
     Notes:
         The timezone for dates used in Gradescope is specific to an institution. For example, for NYU, the timezone is America/New_York.
@@ -86,6 +89,9 @@ def update_assignment_date(
             "assignment[allow_late_submissions]": "1" if late_due_date else "0",
             "assignment[hard_due_date_string]": (
                 late_due_date.strftime("%Y-%m-%dT%H:%M") if late_due_date else ""
+            ),
+            "assignment[section_overrides]": (
+                json.dumps(section_dates) if section_dates else ""
             ),
             "commit": "Save",
         }
