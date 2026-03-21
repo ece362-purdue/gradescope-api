@@ -272,3 +272,112 @@ class Account:
             [grader.text for grader in graders if grader.text]
         )  # get non-empty grader names
         return grader_names
+
+
+    def add_students_to_course(
+        self,
+        course_id: str,
+        students: list[dict],
+    ) -> dict:
+        """
+        Bulk-add students to a Gradescope course.
+
+        Args:
+            course_id (str): The Gradescope course ID.
+            students (list[dict]): Each dict must have keys:
+                - ``name``  (str): Full name of the student.
+                - ``email`` (str): Email address of the student.
+                - ``section_names`` (list[str], optional): Section labels, e.g. ["002"].
+
+        Returns:
+            dict: The JSON response from Gradescope, or a raw-text dict on error.
+
+        Raises:
+            ValueError: If course_id is empty.
+            RuntimeError: If the HTTP request fails.
+        """
+        if not course_id:
+            raise ValueError("course_id must not be empty")
+
+        endpoint = f"{self.gradescope_base_url}/courses/{course_id}/memberships/many"
+
+        # Rails requires indexed array notation, e.g. students[0][name]=...
+        data: list[tuple[str, str]] = [
+            ("role", "0"),
+            ("num_succeeded", "0"),
+        ]
+        for i, student in enumerate(students):
+            data.append((f"students[{i}][name]", student.get("name", "")))
+            data.append((f"students[{i}][email]", student.get("email", "")))
+            for section in student.get("section_names", []):
+                data.append((f"students[{i}][section_names][]", section))
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "*/*",
+        }
+
+        response = self.session.post(endpoint, data=data, headers=headers)
+
+        if response.status_code not in (200, 201):
+            raise RuntimeError(
+                f"Failed to add students to course {course_id}. "
+                f"Status code: {response.status_code}. Body: {response.text[:500]}"
+            )
+
+        try:
+            return response.json()
+        except Exception:
+            return {"raw": response.text}
+
+    def remove_student_from_course(
+        self,
+        course_id: str,
+        membership_id: str,
+    ) -> bool:
+        """
+        Remove a single member from a Gradescope course by membership ID.
+
+        Args:
+            course_id (str): The Gradescope course ID.
+            membership_id (str): The membership ID (visible in the Gradescope
+                memberships page URL when editing a member).
+
+        Returns:
+            bool: True if successfully removed.
+
+        Raises:
+            ValueError: If either argument is empty.
+            RuntimeError: If the HTTP request fails.
+        """
+        if not course_id or not membership_id:
+            raise ValueError("course_id and membership_id must not be empty")
+
+        endpoint = (
+            f"{self.gradescope_base_url}/courses/{course_id}"
+            f"/memberships/{membership_id}"
+        )
+
+        # Rails tunnels DELETE over POST via _method=delete.
+        csrf_token = self.session.headers.get("X-CSRF-Token", "")
+        data = {
+            "_method": "delete",
+            "authenticity_token": csrf_token,
+        }
+
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Accept": "*/*",
+        }
+
+        response = self.session.post(endpoint, data=data, headers=headers)
+
+        if response.status_code not in (200, 204):
+            raise RuntimeError(
+                f"Failed to remove membership {membership_id} from course {course_id}. "
+                f"Status code: {response.status_code}. Body: {response.text[:500]}"
+            )
+
+        return True
